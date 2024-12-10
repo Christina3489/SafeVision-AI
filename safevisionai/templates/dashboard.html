@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CarForAnyone Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        header {
+            background-color: #007BFF;
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .logout {
+            color: white;
+            text-decoration: none;
+            font-size: 1rem;
+        }
+        .logout:hover {
+            text-decoration: underline;
+        }
+        .container {
+            margin-top: 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .camera-stream {
+            display: none; /* Initially hidden */
+            width: 80%;
+            max-width: 600px;
+            height: 400px;
+            background: #000;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            margin: 20px auto;
+        }
+        img {
+            width: 100%;
+            height: 100%;
+        }
+        .buttons {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .buttons button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 0 10px;
+        }
+        .start {
+            background-color: #28a745;
+            color: white;
+        }
+        .stop {
+            background-color: #dc3545;
+            color: white;
+        }
+        .start:hover {
+            background-color: #218838;
+        }
+        .stop:hover {
+            background-color: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>CarForAnyone Dashboard</h1>
+        <a class="logout" href="{{ url_for('logout') }}">Logout</a>
+    </header>
+    <div class="container">
+        <!-- Initially hidden camera stream -->
+        <div id="camera-container" class="camera-stream">
+            <img id="camera-stream" src="" alt="Camera Stream">
+        </div>
+        <div class="buttons">
+            <button class="start" onclick="startRecording()">Start Recording</button>
+            <button class="stop" onclick="stopRecording()">Stop Recording</button>
+        </div>
+    </div>
+
+    <script>
+        const cameraStream = document.getElementById('camera-stream');
+        const cameraContainer = document.getElementById('camera-container');
+
+        function startRecording() {
+            fetch('/start_recording/0')  // Replace 1 with appropriate camera ID
+                .then(response => {
+                    if (response.ok) {
+                        alert('Recording started!');
+                        cameraStream.src = "/video_feed"; // Set the source to stream
+                        cameraContainer.style.display = "block"; // Show the camera container
+                    } else {
+                        alert("Failed to start recording.");
+                    }
+                })
+                .catch(error => console.error('Error starting recording:', error));
+        }
+
+        function stopRecording() {
+            fetch('/stop_recording')
+                .then(response => {
+                    if (response.ok) {
+                        alert('Recording stopped!');
+                        cameraStream.src = ""; // Remove the source to stop the stream
+                        cameraContainer.style.display = "none"; // Hide the camera container
+                    } else {
+                        alert("Failed to stop recording.");
+                    }
+                })
+                .catch(error => console.error('Error stopping recording:', error));
+        }
+    </script>
+</body>
+</html>
