@@ -1,3 +1,5 @@
+import logging
+import os
 from flask import Flask, render_template, Response, request, redirect, url_for, session, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -5,7 +7,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
 import cv2
 import torch
-import os
 import threading
 from torchvision import transforms, models
 from torchvision.models import ResNet18_Weights
@@ -15,6 +16,20 @@ from threading import Lock
 
 # Initialize Flask app
 app = Flask(__name__)
+# --- Logging Configuration ---
+LOG_DIR = os.path.join(os.getcwd(), "logs")
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+
+logging.basicConfig(
+    filename=os.path.join(LOG_DIR, "app.log"),
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] - %(message)s",
+    filemode="a",
+)
+logger = logging.getLogger(__name__)
+
+
 
 # Global variables
 camera = None
@@ -22,13 +37,16 @@ camera_lock = Lock()
 streaming = False
 recording = False
 
+
 # Configure SQLite database
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key'
 
+
 # Initialize database
 db = SQLAlchemy(app)
+
 
 # Email configuration
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
@@ -49,9 +67,12 @@ violence_model.load_state_dict(torch.load("C:/Users/chris/Downloads/weapon_detec
 violence_model.eval()
 violence_classes = ["Non-Violence", "Violence"]
 
+
 # Flask-Login Initialization
 login_manager = LoginManager()
 login_manager.init_app(app)
+
+
 
 # User model
 class User(UserMixin, db.Model):
@@ -72,26 +93,27 @@ class Camera(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# Camera Initialization
 def initialize_camera():
-    """Initialize the camera for video capture."""
     global camera
     with camera_lock:
         if camera is None or not camera.isOpened():
-            camera = cv2.VideoCapture(0)  # Use default camera
+            camera = cv2.VideoCapture(0)
             if not camera.isOpened():
-                print("Error: Unable to open camera.")
-                return None  # Return None instead of False
-        return camera  # Return the camera object
+                logger.error("Unable to open camera.")
+                return None
+            logger.info("Camera initialized successfully.")
+        return camera
 
-# Release camera
+# Release Camera
 def release_camera():
-    """Release the camera when not in use."""
     global camera
     with camera_lock:
         if camera and camera.isOpened():
             camera.release()
             camera = None
-            print("Camera released.")
+            logger.info("Camera released.")
+
 
 # Generate video frames for streaming
 def generate_frames():
@@ -110,10 +132,15 @@ def generate_frames():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
+
+
 # Routes
 @app.route('/')
 def index():
+    logger.info("Index page accessed.")
     return render_template('index.html', title="SafeVision-AI")
+
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -155,11 +182,11 @@ def dashboard():
 
 @app.route('/video_feed')
 def video_feed():
-    """Route to stream video feed to HTML."""
     global streaming
     if not streaming:
-        print("Stream requested but camera is not active.")
+        logger.warning("Stream requested but camera is not active.")
         return Response("Camera not active.", status=503)
+    logger.info("Video stream started.")
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/start_recording/<int:camera_id>')
@@ -168,11 +195,13 @@ def start_recording(camera_id):
     global streaming, recording
     if not initialize_camera():
         flash("Unable to start camera.")
+        logger.error("Failed to initialize camera for recording.")
         return redirect(url_for('dashboard'))
     streaming = True
     recording = True
     thread = threading.Thread(target=detect_weapon, args=(camera_id, session.get('email')))
     thread.start()
+    logger.info("Recording started.")
     flash("Recording started.")
     return redirect(url_for('dashboard'))
 
@@ -183,8 +212,10 @@ def stop_recording():
     streaming = False
     recording = False
     release_camera()
+    logger.info("Recording stopped.")
     flash("Recording stopped.")
     return redirect(url_for('dashboard'))
+
 
 
 def detect_weapon(camera_id, email):
@@ -194,15 +225,15 @@ def detect_weapon(camera_id, email):
     with app.app_context():  # Ensure Flask app context is available for the thread
         camera = initialize_camera()  # Get the camera object
         if camera is None:
-            print("Camera initialization failed.")
+            logger.error("Camera initialization failed in weapon detection.")
             return
 
-        print("Camera opened successfully. Starting detection...")
+        logger.info("Camera opened successfully. Starting detection...")
 
         while recording:
             success, frame = camera.read()
             if not success:
-                print("Error: Failed to grab frame.")
+                logger.error("Failed to grab frame.")
                 continue  # Keep trying to read the next frame
 
             print("Frame captured. Running YOLO detection...")
@@ -216,14 +247,14 @@ def detect_weapon(camera_id, email):
             for result in results.xyxy[0]:
                 class_name = model.names[int(result[5])]
                 if class_name == 'Handgun' or class_name == 'knife'or class_name == 'Fight' or class_name == 'Fire':
-                    print(f"Threat detected")
+                    logger.info("Threat detected")
                     weapon_detected = True
                     image_path = './detections/threat_detected.jpg'
                     if not os.path.exists('detections'):
                         os.makedirs('detections')
                     cv2.imwrite(image_path, frame)
                     send_email(image_path, email)
-                    print("Threat detected and email sent!")
+                    logger.info("Threat detected and email sent!")
                     break  # Exit the current detection loop, but continue overall recording loop
 
             # Violence Detection with Threshold
@@ -244,22 +275,22 @@ def detect_weapon(camera_id, email):
             confidence, predicted = torch.max(outputs, 1)
 
             # Log outputs for debugging
-            print(f"Raw outputs: {outputs}")
-            print(f"Predicted: {violence_classes[predicted.item()]}, Confidence: {confidence.item():.2f}")
+            logger.info("Raw outputs: {outputs}")
+            logger.info("Predicted: {violence_classes[predicted.item()]}, Confidence: {confidence.item():.2f}")
 
             # Check if confidence exceeds threshold
             if confidence.item() >= 1 and violence_classes[predicted.item()] == "Violence":
-                print(f"Violence detected with confidence: {confidence.item():.2f}")
+                logger.info(f"Violence detected with confidence: {confidence.item():.2f}")
                 image_path = './detections/violence_detected.jpg'
                 cv2.imwrite(image_path, frame)
                 send_email(image_path, email)
-                print("Violence threat detected and email sent!")
+                logger.info("Violence threat detected and email sent!")
             else:
-                print(f"No violence detected. Confidence: {confidence.item():.2f}")
+                logger.info("No violence detected. Confidence: {confidence.item():.2f}")
 
         # Cleanup when recording stops
         release_camera()
-        print("Camera released.")
+        logger.info("Camera released.")
 
 
 # Email notification
@@ -269,10 +300,10 @@ def send_email(image_path, email):
     with app.open_resource(image_path) as fp:
         msg.attach(image_path, "image/jpeg", fp.read())
     mail.send(msg)
-    print("Email sent successfully.")
+    logger.info("Email sent successfully.")
 
-# Run the app
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+    logger.info("Starting the Flask app.")
     app.run(debug=True, port=5112)
