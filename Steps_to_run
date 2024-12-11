@@ -1,0 +1,9 @@
+
+# Upgrade pip to the latest version
+RUN pip install --upgrade pip
+
+# Install dependencies from requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Specify the command to run your app
+CMD ["python", "app.py"]
